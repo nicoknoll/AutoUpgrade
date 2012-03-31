@@ -211,7 +211,6 @@ class AutoUpgrade extends Process implements ConfigurableModule {
 	
 		$page = $this->getInstalledPage();
 		$this->message("Installed to {$page->path}"); 
-		if($page->parent->name == 'setup') $this->message("Click to your 'Setup' page to start using the CSV Importer"); 
 	}
 	
 	/**
