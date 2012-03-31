@@ -1,0 +1,254 @@
+<?php
+
+/**
+ * AutoUpgrade
+ *
+ * By Nico Knoll (http://nico.is)
+ *
+ */
+
+class AutoUpgrade extends Process implements ConfigurableModule {
+
+	public static function getModuleInfo() {
+		return array(
+			'title' => 'AutoUpgrade', 
+			'version' => '1.02', 
+			'summary' => 'Auto upgrades PW.',
+			'singular' => true, 
+			'autoload' => true 
+		);
+	}
+	
+	private $message_displayed;
+	const adminPageName = 'upgrade';
+	
+	public function init() {
+		parent::init();
+	}
+	
+	
+
+	/* --- functions --- */
+
+
+	private function show_message() {
+
+		$data = wire('modules')->getModuleConfigData('AutoUpgrade'); 
+		
+		if($data['upgrade_available'] == false && ((int)$data['last_checked']+900) < time()) {
+			$git = file_get_contents('https://api.github.com/repos/ryancramerdesign/Processwire');
+			$decoded = json_decode($git, true);
+			
+			$data = wire('modules')->getModuleConfigData('AutoUpgrade'); 
+			
+			if(strtotime($decoded['updated_at']) > strtotime($data['git']['updated_at'])) { 
+				
+				$data['upgrade_available'] = true;
+				$data['last_checked'] = time();
+				
+				wire('modules')->saveModuleConfigData('AutoUpgrade', $data); 
+			
+				$this->message('New upgrade available! <a href="'.$this->config->urls->admin.'setup/upgrade">Click here</a> to upgrade.');
+			}
+		} elseif($data['upgrade_available'] == true) {
+			$this->message('New upgrade available! <a href="'.$this->config->urls->admin.'setup/upgrade">Click here</a> to upgrade.');
+		}
+	}
+	
+	private function unzip($file){ 
+		$zip = zip_open($file); 
+		if(is_resource($zip)){ 
+			$tree = ""; 
+			$i = 0;
+			while(($zip_entry = zip_read($zip)) !== false){ 
+				//echo "Unpacking ".zip_entry_name($zip_entry)."\n"; 
+				if(strpos(zip_entry_name($zip_entry), DIRECTORY_SEPARATOR) !== false){ 
+					$last = strrpos(zip_entry_name($zip_entry), DIRECTORY_SEPARATOR); 
+					$dir = substr(zip_entry_name($zip_entry), 0, $last); 
+					$file = substr(zip_entry_name($zip_entry), strrpos(zip_entry_name($zip_entry), DIRECTORY_SEPARATOR)+1); 
+					if(!is_dir($dir)){ 
+						if($i == 0) {
+							$first_folder = $dir;
+						}
+						@mkdir($dir, 0755, true) or die("Unable to create $dir\n"); 
+					} 
+					if(strlen(trim($file)) > 0){ 
+						$return = @file_put_contents($dir."/".$file, zip_entry_read($zip_entry, zip_entry_filesize($zip_entry))); 
+						if($return === false){ 
+							die("Unable to write file $dir/$file\n"); 
+						} 
+					} 
+				} else { 
+					file_put_contents($file, zip_entry_read($zip_entry, zip_entry_filesize($zip_entry))); 
+				} 
+				$i++;
+			} 
+			return $first_folder;
+		} else { 
+			echo "Unable to open zip file\n"; 
+			return false;
+		} 
+	}
+	
+	private function unlink_recursive($str) {
+	
+	 	if(is_file($str)){
+	 		return unlink($str);
+	 	}
+	 	elseif(is_dir($str)){
+	 		$scan = glob(rtrim($str,'/').'/*');
+	 		foreach($scan as $index=>$path){
+	 			$this->unlink_recursive($path);
+	 		}
+	 		return rmdir($str);
+	 	}
+	}
+	
+	private function upgrade($folder) {
+		$files = array_merge(glob($this->config->paths->AutoUpgrade.$folder.'/.*'), glob($this->config->paths->AutoUpgrade.$folder.'/*'));
+		foreach ($files as $file) {
+			if(basename($file) != '.' && basename($file) != '..') {	
+				$filename = basename($file);
+				$this->unlink_recursive($this->config->paths->root.$filename);
+				rename($file, $this->config->paths->root.$filename);
+			}
+		}
+		return true;
+	}
+
+	
+	
+	
+	/* --- pw-functions --- */
+	
+	public static function getModuleConfigInputfields(array $data) {
+		return new InputfieldWrapper();
+	}
+
+	public function ready() {
+		$this->show_message();
+	}
+	
+	public function ___execute() {
+		
+		$form = $this->modules->get("InputfieldForm"); 
+		$form->method = 'post';		
+		$form->action = './do/'; 
+		$form->description = ""; 
+		$form->value = 
+			"Click on 'Upgrade' to start the upgrade. It could last some minutes. <b>Warning:</b> This Module isn't completly finished right now, so you should create a backup first.<br /><br />";
+			
+		$f = $this->modules->get("InputfieldSubmit"); 
+		$f->name = 'submit';
+		$f->value = 'Upgrade'; 
+		$form->add($f); 
+		
+		return $form->render();
+	}
+	
+	public function ___executeDo() {
+	
+		$git = file_get_contents('https://api.github.com/repos/ryancramerdesign/Processwire');
+		$decoded = json_decode($git, true);
+		$content = file_get_contents($decoded['html_url'].'/zipball/master/');
+	
+		chdir($this->config->paths->AutoUpgrade);
+		
+		$fp = fopen("upgrade.zip", "w");
+		fwrite($fp, $content);
+		fclose($fp);
+		
+		$folder = $this->unzip('upgrade.zip');
+		
+		if($folder) {
+			$this->unlink_recursive($folder.'/.gitignore');
+			$this->unlink_recursive($folder.'/install.php');
+			$this->unlink_recursive($folder.'/site-default/');
+			$this->unlink_recursive('upgrade.zip');
+			rename($folder.'/htaccess.txt', $folder.'/.htaccess');
+			
+			foreach(@file($folder.'/wire/core/ProcessWire.php') as $line) {
+				if(preg_match('%const versionMajor = (.*);%uis', $line))
+				preg_match('%const versionMajor = (.*);%uis', $line, $versionMajor);
+			
+				if(preg_match('%const versionMinor = (.*);%uis', $line))
+				preg_match('%const versionMinor = (.*);%uis', $line, $versionMinor);
+			
+				if(preg_match('%const versionRevision = (.*);%uis', $line))
+				preg_match('%const versionRevision = (.*);%uis', $line, $versionRevision);
+			}
+			
+			$version = $versionMajor[1].'.'.$versionMinor[1].'.'.$versionRevision[1];
+			
+			$upgraded = $this->upgrade($folder);
+		
+			$this->unlink_recursive($folder);
+			
+			if($upgraded) {
+				$data = wire('modules')->getModuleConfigData('AutoUpgrade'); 
+				$data['upgrade_available'] = false;
+				wire('modules')->saveModuleConfigData('AutoUpgrade', array_merge($data, array('current_version' => $version, 'git' => $decoded))); 
+				$this->message("Successfully upgraded to v".$version.".");
+				$this->session->redirect("../");
+			}
+		}		
+	}
+	
+	
+	
+	
+	/* --- install --- */
+	
+	public function ___install() {
+	
+		if(ProcessWire::versionMajor == 2 && ProcessWire::versionMinor < 1) {
+			throw new WireException("This module requires ProcessWire 2.1 or newer"); 
+		}
+	
+
+		wire('modules')->saveModuleConfigData('AutoUpgrade', array('current_version' => $this->config->version)); 
+	
+	
+		$page = $this->getInstalledPage();
+		$this->message("Installed to {$page->path}"); 
+		if($page->parent->name == 'setup') $this->message("Click to your 'Setup' page to start using the CSV Importer"); 
+	}
+	
+	/**
+	 * Return the page that this Process is installed on 
+	 *
+	 */
+	protected function getInstalledPage() {
+	
+		$admin = $this->pages->get($this->config->adminRootPageID); 
+		$parent = $admin->child("name=setup"); 
+		if(!$parent->id) $parent = $admin;
+		$page = $parent->child("name=" . self::adminPageName); 
+	
+		if(!$page->id) { 	
+			$page = new Page();
+			$page->parent = $parent; 
+			$page->template = $this->templates->get('admin');
+			$page->name = self::adminPageName; 
+			$page->title = "Upgrade ProcessWire";
+			$page->process = $this; 
+			$page->sort = $parent->numChildren;
+			$page->save();
+		}
+	
+		return $page; 	
+	}
+	
+	/**
+	 * Uninstall the module
+	 *
+	 */
+	public function ___uninstall() {
+		$page = $this->getInstalledPage();	
+		if($page->id) { 
+			$this->message("Removed {$page->path}");
+			$this->pages->delete($page); 
+		}
+	}
+		
+}
