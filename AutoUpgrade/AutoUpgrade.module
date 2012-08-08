@@ -12,8 +12,8 @@ class AutoUpgrade extends Process implements ConfigurableModule {
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'AutoUpgrade', 
-			'version' => '1.02', 
-			'summary' => 'Auto upgrades PW.',
+			'version' => '1.03', 
+			'summary' => 'Automatically upgrade ProcessWire.',
 			'singular' => true, 
 			'autoload' => true 
 		);
@@ -96,9 +96,11 @@ class AutoUpgrade extends Process implements ConfigurableModule {
 	 		return unlink($str);
 	 	}
 	 	elseif(is_dir($str)){
-	 		$scan = glob(rtrim($str,'/').'/*');
-	 		foreach($scan as $index=>$path){
-	 			$this->unlink_recursive($path);
+	 		$scan = array_merge(glob(rtrim($str,'/').'/.DS_Store'), glob(rtrim($str,'/').'/*'));
+	 		foreach($scan as $index => $path){
+	 			if($path != '.' && $path != '..') {
+	 				$this->unlink_recursive($path);
+	 			}
 	 		}
 	 		return rmdir($str);
 	 	}
@@ -107,16 +109,15 @@ class AutoUpgrade extends Process implements ConfigurableModule {
 	private function upgrade($folder) {
 		$files = array_merge(glob($this->config->paths->AutoUpgrade.$folder.'/.*'), glob($this->config->paths->AutoUpgrade.$folder.'/*'));
 		foreach ($files as $file) {
-			if(basename($file) != '.' && basename($file) != '..') {	
+			if(basename($file) != '.' && basename($file) != '..' ) {	
 				$filename = basename($file);
 				$this->unlink_recursive($this->config->paths->root.$filename);
-				rename($file, $this->config->paths->root.$filename);
+				var_dump(rename($file, $this->config->paths->root.$filename), $filename);
 			}
 		}
 		return true;
 	}
 
-	
 	
 	
 	/* --- pw-functions --- */
