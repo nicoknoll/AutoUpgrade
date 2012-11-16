@@ -12,7 +12,7 @@ class AutoUpgrade extends Process implements ConfigurableModule {
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'AutoUpgrade', 
-			'version' => '1.03', 
+			'version' => '1.04', 
 			'summary' => 'Automatically upgrade ProcessWire.',
 			'singular' => true, 
 			'autoload' => true 
@@ -166,7 +166,7 @@ class AutoUpgrade extends Process implements ConfigurableModule {
 			$this->unlink_recursive($folder.'/install.php');
 			$this->unlink_recursive($folder.'/site-default/');
 			$this->unlink_recursive('upgrade.zip');
-			rename($folder.'/htaccess.txt', $folder.'/.htaccess');
+			rename($folder.'/htaccess.txt', $folder.'/new-htaccess.txt');
 			
 			foreach(@file($folder.'/wire/core/ProcessWire.php') as $line) {
 				if(preg_match('%const versionMajor = (.*);%uis', $line))
@@ -189,7 +189,7 @@ class AutoUpgrade extends Process implements ConfigurableModule {
 				$data = wire('modules')->getModuleConfigData('AutoUpgrade'); 
 				$data['upgrade_available'] = false;
 				wire('modules')->saveModuleConfigData('AutoUpgrade', array_merge($data, array('current_version' => $version, 'git' => $decoded))); 
-				$this->message("Successfully upgraded to v".$version.".");
+				$this->message("Successfully upgraded to v".$version.". (Maybe you'll need to update .htaccess manually. If needed, just rename new-htaccess.txt to .htaccess or copy the changed parts).");
 				$this->session->redirect("../");
 			}
 		}		
